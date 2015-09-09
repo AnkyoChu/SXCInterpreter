@@ -30,19 +30,26 @@ template <typename Iterator, typename Skipper = sxc::Skipper<Iterator>>
 struct sxc::Grammar: public boost::spirit::qi::grammar<Iterator, Skipper>
 {
 
-	Grammar() : Grammar::base_type(assignment, "assignment")
+	Grammar() : Grammar::base_type(program, "program")
     {
         using namespace boost::spirit::qi;
 
 		///////////////////////////////////////////////////////////////////
 		/// 基础定义
 
+		comment
+			= ( "//"
+				>> *(char_ - (eol | eoi))
+					>> (eol | eoi)
+			   )
+			;
+
 		keywords
 			= lit("while") | "if" | "else" | "out" | "in" | "begin" | "end"
 			;
 
         identifier 
-			=	(alpha 
+			=	(  alpha 
 				>> *(alnum)
 				)
 				- keywords
@@ -53,9 +60,13 @@ struct sxc::Grammar: public boost::spirit::qi::grammar<Iterator, Skipper>
 			;
 
 		string
-			= char_('\"')
+			= '\"'
 				>> *(char_ - '\"')
 					>> '\"'
+			;
+
+		comparison
+			= lit("<>") | "==" | "<=" | '<' | ">=" | '>'
 			;
 
 		///////////////////////////////////////////////////////////////////
@@ -74,16 +85,16 @@ struct sxc::Grammar: public boost::spirit::qi::grammar<Iterator, Skipper>
 
 		///////////////////////////////////////////////////////////////////
 		/// 算术运算
-		
-		result
-			= ('(' >> result >> ')')
-			| identifier
+
+		operand
+			= ('(' >> operand >> ')')
 			| assignment
+			| identifier
 			| number
 			;
 
 		term
-			=	factor
+			= factor
 				>> *( ('*'	>> factor)
 					| ('/'	>> factor)
 					| ('%'	>> factor)
@@ -91,14 +102,14 @@ struct sxc::Grammar: public boost::spirit::qi::grammar<Iterator, Skipper>
 			;
 
 		factor
-			=	('(' >> arithmetic >> ')')
-			|	result
-			|   ('-' >> factor)
-			|   ('+' >> factor)
+			= ('(' >> arithmetic >> ')')
+			| operand
+			| ('-' >> factor)
+			| ('+' >> factor)
 			;
 
 		arithmetic
-			=   term
+			= term
 				>> *(   ('+' >> term)
 					|   ('-' >> term)
 					)
@@ -115,7 +126,7 @@ struct sxc::Grammar: public boost::spirit::qi::grammar<Iterator, Skipper>
 		right_value
 			= ('(' >> right_value >> ')')
 			| arithmetic
-			| result
+			| operand
 			;
 		
 		assignment
@@ -124,18 +135,83 @@ struct sxc::Grammar: public boost::spirit::qi::grammar<Iterator, Skipper>
 					>> *(  left_value >> '=')
 						>> right_value
 			;
+
+		///////////////////////////////////////////////////////////////////
+		/// 逻辑表达式
+
+		logical
+			=	('(' 
+					>> logical 
+						>> ')'
+				)
+			|	( right_value
+					>> comparison
+						>> right_value
+				)
+			;
+
+		///////////////////////////////////////////////////////////////////
+		/// 一般语句
+
+		statement
+			=	(	( command
+					| string
+					| right_value
+					| eps
+					)
+					>> ';'
+				)
+			;
+
+		loop
+			= (lit("while") >> no_skip[ascii::space | comment])
+				>> logical
+					>> '{'
+						>> -block
+							>> '}'
+			;
+
+		condition
+			= (lit("if") >> no_skip[ascii::space | comment])
+				>> logical
+					>> '{'
+						>> -block
+							>> '}'
+			;
+
+		block
+			= +statement
+			| loop
+			| condition
+			| (eps >> (eol | eoi))
+			;
 		
-		BOOST_SPIRIT_DEBUG_NODE(assignment);
+		///////////////////////////////////////////////////////////////////
+		/// 程序块
+
+		program
+			= (lit("begin") >> no_skip[ascii::space | comment])
+				>> *block
+					>> lit("end")
+						>> (eol | eoi)
+			;
+
+		BOOST_SPIRIT_DEBUG_NODE(loop);
+		BOOST_SPIRIT_DEBUG_NODE(condition);
     }
 
 	template <typename Iterator, typename ... T>
 	using rule = boost::spirit::qi::rule<Iterator, T...>;
 
-	rule<Iterator> keywords, identifier, number, string;
-
-	rule<Iterator, Skipper> argument, command;
-	rule<Iterator, Skipper> result, term, factor, arithmetic;
-	rule<Iterator, Skipper> left_value, right_value, assignment;
+	rule<Iterator> comment;												
+	rule<Iterator> keywords, identifier, number, string, comparison;	/**< 基础定义 */
+	rule<Iterator, Skipper> argument, command;							/**< 带参数指令 */
+	rule<Iterator, Skipper> operand, term, factor, arithmetic;			/**< 算术运算 */
+	rule<Iterator, Skipper> left_value, right_value, assignment;		/**< 赋值运算 */
+	rule<Iterator, Skipper> logical;									/**< 逻辑运算 */
+	rule<Iterator, Skipper> statement;									/**< 一般语句 */
+	rule<Iterator, Skipper> loop, condition, block;						/**< 语句块 */
+	rule<Iterator, Skipper> program;									/**< 程序块 */
 };
 
 
@@ -148,14 +224,15 @@ struct sxc::Skipper : public boost::spirit::qi::grammar<Iterator>
         using namespace boost::spirit::qi;
 
 		comment
-			= lit("//")
-				>> *(char_ - eol)
-					>> eol
+			= ( "//"
+				>> *(char_ - (eol | eoi))
+					>> (eol | eoi)
+			   )
 			;
 
         skip 
-			= ascii::space 
-			| comment;
+			= comment
+			| ascii::space;
     }
 
 	template <typename Iterator, typename ... T>
