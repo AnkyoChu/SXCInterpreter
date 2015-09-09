@@ -74,6 +74,13 @@ struct sxc::Grammar: public boost::spirit::qi::grammar<Iterator, Skipper>
 
 		///////////////////////////////////////////////////////////////////
 		/// 算术运算
+		
+		result
+			= ('(' >> result >> ')')
+			| identifier
+			| assignment
+			| number
+			;
 
 		term
 			=	factor
@@ -84,7 +91,8 @@ struct sxc::Grammar: public boost::spirit::qi::grammar<Iterator, Skipper>
 			;
 
 		factor
-			=	right_value
+			=	('(' >> arithmetic >> ')')
+			|	result
 			|   ('-' >> factor)
 			|   ('+' >> factor)
 			;
@@ -100,22 +108,21 @@ struct sxc::Grammar: public boost::spirit::qi::grammar<Iterator, Skipper>
 		/// 赋值运算
 
 		left_value
-			= identifier
-			| ('(' >> identifier >> ')')
+			= ('(' >> left_value >> ')')
+			| identifier
 			;
 
 		right_value
 			= ('(' >> right_value >> ')')
 			| arithmetic
-			| assignment
-			| identifier
-			| number
+			| result
 			;
 		
 		assignment
 			= left_value
-				>> '='
-					>> right_value
+				>> '='   
+					>> *(  left_value >> '=')
+						>> right_value
 			;
 		
 		BOOST_SPIRIT_DEBUG_NODE(assignment);
@@ -127,7 +134,7 @@ struct sxc::Grammar: public boost::spirit::qi::grammar<Iterator, Skipper>
 	rule<Iterator> keywords, identifier, number, string;
 
 	rule<Iterator, Skipper> argument, command;
-	rule<Iterator, Skipper> term, factor, arithmetic;
+	rule<Iterator, Skipper> result, term, factor, arithmetic;
 	rule<Iterator, Skipper> left_value, right_value, assignment;
 };
 
